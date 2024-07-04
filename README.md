@@ -8,7 +8,7 @@ Calculate the estimated read time for content.
 
 #### Requirements
 
-This plugin requires Craft CMS 3.0.0, or later.
+This plugin requires Craft CMS 4.0.0, or later.
 
 #### Plugin Store
 
@@ -105,7 +105,7 @@ A `DateInterval` object. You'll need to set the [format](http://php.net/manual/e
 ```twig
 {% set time = readTime(entry) %}
 
-{{ time.interval('%h hours, %i minutes, $s seconds') }}
+{{ time.interval('%h hours, %i minutes, %s seconds') }}
 ```
 
 #### `seconds`

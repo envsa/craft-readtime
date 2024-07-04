@@ -1,6 +1,7 @@
 <?php
+
 /**
- * Read Time plugin for Craft CMS 3.x
+ * Read Time plugin for Craft CMS 4.x
  *
  * Calculate the estimated read time for content.
  *
@@ -10,140 +11,149 @@
 
 namespace jalendport\readtime\twigextensions;
 
+use Craft;
+use craft\elements\Entry;
+use craft\elements\MatrixBlock;
+use craft\errors\InvalidFieldException;
+use craft\fields\Matrix;
+use craft\helpers\StringHelper;
+use jalendport\readtime\models\Settings;
 use jalendport\readtime\ReadTime;
 use jalendport\readtime\models\TimeModel;
-
-use Craft;
-use craft\helpers\DateTimeHelper;
-use craft\helpers\StringHelper;
-
+use Twig\Extension\AbstractExtension;
+use Twig\TwigFilter;
+use Twig\TwigFunction;
+use verbb\supertable\fields\SuperTableField;
 use yii\base\ErrorException;
 
-class ReadTimeTwigExtension extends \Twig_Extension
+class ReadTimeTwigExtension extends AbstractExtension
 {
-    // Public Methods
-    // =========================================================================
+  // Public Methods
+  // =========================================================================
 
-    public function getName()
-    {
-        return 'readTime';
-    }
+  public function getName(): string
+  {
+    return 'readTime';
+  }
 
-    public function getFunctions()
-    {
-        return [
-            new \Twig_SimpleFunction('readTime', [$this, 'readTimeFunction']),
-        ];
-    }
+  public function getFunctions(): array
+  {
+    return [
+      new TwigFunction('readTime', [$this, 'readTimeFunction']),
+    ];
+  }
 
-    public function getFilters()
-    {
-        return [
-            new \Twig_SimpleFilter('readTime', [$this, 'readTimeFilter']),
-        ];
-    }
+  public function getFilters(): array
+  {
+    return [
+      new TwigFilter('readTime', [$this, 'readTimeFilter']),
+    ];
+  }
 
-    public function readTimeFunction($element, $showSeconds = true)
-    {
-        $totalSeconds = 0;
-        $vals = '';
+  /**
+   * @throws InvalidFieldException
+   */
+  public function readTimeFunction($element, $showSeconds = true): TimeModel
+  {
+    $totalSeconds = 0;
 
-        if ($element instanceof \craft\elements\Entry) {
-            // Provided value is an entry
+    if ($element instanceof Entry) {
+      // Provided value is an entry
 
-            foreach ($element->getFieldLayout()->getFields() as $field) {
-                try {
-                    // If field is a matrix then loop through fields in block
-                    if ($field instanceof \craft\fields\Matrix || $field instanceof \benf\neo\Field) {
-                        foreach($element->getFieldValue($field->handle)->all() as $block) {
-                            $blockFields = $block->getFieldLayout()->getFields();
+      foreach ($element->getFieldLayout()->getCustomFields() as $field) {
+        try {
+          // If field is a matrix then loop through fields in block
+          if ($field instanceof Matrix || $field instanceof \benf\neo\Field) {
+            foreach ($element->getFieldValue($field->handle)->all() as $block) {
+              $blockFields = $block->getFieldLayout()->getFields();
 
-                            foreach ($blockFields as $blockField) {
-                                $value = $block->getFieldValue($blockField->handle);
-                                $seconds = $this->valToSeconds($value);
-                                $totalSeconds = $totalSeconds + $seconds;
-                            }
-                        }
-                    } elseif($field instanceof \verbb\supertable\fields\SuperTableField) {
-                        foreach($element->getFieldValue($field->handle)->all() as $block) {
-                            $blockFields = $block->getFieldLayout()->getFields();
-
-                            foreach ($blockFields as $blockField) {
-                                if ($blockField instanceof \craft\fields\Matrix) {
-                                    foreach($block->getFieldValue($blockField->handle)->all() as $matrix) {
-                                        $matrixFields = $matrix->getFieldLayout()->getFields();
-
-                                        foreach ($matrixFields as $matrixField) {
-                                            $value = $matrix->getFieldValue($matrixField->handle);
-                                            $seconds = $this->valToSeconds($value);
-                                            $totalSeconds = $totalSeconds + $seconds;
-                                        }
-                                    }
-                                } else {
-                                    $value = $block->getFieldValue($blockField->handle);
-                                    $seconds = $this->valToSeconds($value);
-                                    $totalSeconds = $totalSeconds + $seconds;
-                                }
-                            }
-                        }
-                    } else {
-                        $value = $element->getFieldValue($field->handle);
-                        $seconds = $this->valToSeconds($value);
-                        $totalSeconds = $totalSeconds + $seconds;
-                    }
-                } catch (ErrorException $e) {
-                    continue;
-                }
+              foreach ($blockFields as $blockField) {
+                $value = $block->getFieldValue($blockField->handle);
+                $seconds = $this->valToSeconds($value);
+                $totalSeconds = $totalSeconds + $seconds;
+              }
             }
-        } elseif(is_array($element)) {
-            // Provided value is a matrix or neo field
-            Craft::info('matrix or neo field provided', 'readtime');
+          } elseif ($field instanceof SuperTableField) {
+            foreach ($element->getFieldValue($field->handle)->all() as $block) {
+              $blockFields = $block->getFieldLayout()->getFields();
 
-            foreach ($element as $block) {
-                if ($block instanceof \craft\elements\MatrixBlock || $block instanceof \benf\neo\elements\Block) {
-                    $blockFields = $block->getFieldLayout()->getFields();
+              foreach ($blockFields as $blockField) {
+                if ($blockField instanceof Matrix) {
+                  foreach ($block->getFieldValue($blockField->handle)->all() as $matrix) {
+                    $matrixFields = $matrix->getFieldLayout()->getFields();
 
-                    foreach ($blockFields as $blockField) {
-                        $value = $block->getFieldValue($blockField->handle);
-                        $seconds = $this->valToSeconds($value);
-                        $totalSeconds = $totalSeconds + $seconds;
+                    foreach ($matrixFields as $matrixField) {
+                      $value = $matrix->getFieldValue($matrixField->handle);
+                      $seconds = $this->valToSeconds($value);
+                      $totalSeconds = $totalSeconds + $seconds;
                     }
+                  }
+                } else {
+                  $value = $block->getFieldValue($blockField->handle);
+                  $seconds = $this->valToSeconds($value);
+                  $totalSeconds = $totalSeconds + $seconds;
                 }
+              }
             }
+          } else {
+            $value = $element->getFieldValue($field->handle);
+            $seconds = $this->valToSeconds($value);
+            $totalSeconds = $totalSeconds + $seconds;
+          }
+        } catch (ErrorException $e) {
+          continue;
         }
+      }
+    } elseif (is_array($element)) {
+      // Provided value is a matrix or neo field
+      Craft::info('matrix or neo field provided', 'readtime');
 
-        $data = [
-            'seconds'     => $totalSeconds,
-            'showSeconds' => $showSeconds,
-        ];
+      foreach ($element as $block) {
+        if ($block instanceof MatrixBlock || $block instanceof \benf\neo\elements\Block) {
+          $blockFields = $block->getFieldLayout()->getFields();
 
-        return new TimeModel($data);
+          foreach ($blockFields as $blockField) {
+            $value = $block->getFieldValue($blockField->handle);
+            $seconds = $this->valToSeconds($value);
+            $totalSeconds = $totalSeconds + $seconds;
+          }
+        }
+      }
     }
 
-    public function readTimeFilter($value = null, $showSeconds = true)
-    {
-        $seconds = $this->valToSeconds($value);
+    $data = [
+      'seconds'     => $totalSeconds,
+      'showSeconds' => $showSeconds,
+    ];
 
-        $data = [
-            'seconds'     => $seconds,
-            'showSeconds' => $showSeconds,
-        ];
+    return new TimeModel($data);
+  }
 
-        return new TimeModel($data);
-    }
+  public function readTimeFilter($value = null, $showSeconds = true): TimeModel
+  {
+    $seconds = $this->valToSeconds($value);
 
-    // Private Methods
-    // =========================================================================
+    $data = [
+      'seconds'     => $seconds,
+      'showSeconds' => $showSeconds,
+    ];
 
-    private function valToSeconds($value)
-    {
-        $settings = ReadTime::$plugin->getSettings();
-        $wpm = $settings->wordsPerMinute;
+    return new TimeModel($data);
+  }
 
-        $string = StringHelper::toString($value);
-        $wordCount = StringHelper::countWords($string);
-        $seconds = floor($wordCount / $wpm * 60);
+  // Private Methods
+  // =========================================================================
 
-        return $seconds;
-    }
+  private function valToSeconds($value): float
+  {
+    /** @var Settings $settings */
+    $settings = ReadTime::getInstance()->getSettings();
+    $wpm = $settings->wordsPerMinute;
+
+    $string = StringHelper::toString($value);
+    $wordCount = StringHelper::countWords($string);
+    $seconds = floor($wordCount / $wpm * 60);
+
+    return $seconds;
+  }
 }
